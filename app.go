@@ -34,8 +34,8 @@ var Credentials = make(map[string]string)
 
 // Some helpful Structs
 type ResponseBody struct {
-	Message 	string 				`json:"message"`
-	Credentials map[string]string 	`json:"credentials"`
+	Message 	string 	`json:"message"`
+	Credentials string 	`json:"credentials"`
 }
 
 type RequestBody struct {
@@ -45,10 +45,12 @@ type RequestBody struct {
 	Region 	string `jsson:"region"`
 }
 
-func main() {
+type CredRequestBody struct {
+	Id 			string `json:"id"`
+	ResourceId	string `json:"resource_id"`
+}
 
-	//Resources = make(map[string]int)
-	//Credentials = make(map[string]int)
+func main() {
 
 	goji.Put("/v1/resources/:id", PutResources)
 
@@ -66,10 +68,11 @@ func main() {
 }
 
 func PutResources(c web.C, w http.ResponseWriter, r *http.Request) {
-	log.Print("PutResources")	
+	log.Print("PutResources")
 
 	//VerifySignature(w, r)
-	/*body, _ := ioutil.ReadAll(r.Body)
+	/*
+	body, _ := ioutil.ReadAll(r.Body)
 	buf := bytes.NewBuffer(body)
 
 	verifier, _ := signature.NewVerifier(signature.ManifoldKey)
@@ -81,8 +84,8 @@ func PutResources(c web.C, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Println("Signature verified")
-	*/
+	fmt.Println("Signature verified")*/
+	
 	id := c.URLParams["id"]
 
     body := ParseBody(r)
@@ -147,19 +150,46 @@ func DeleteResources(c web.C, w http.ResponseWriter, r *http.Request) {
 	}
 
 	delete(Resources, id)
-	SendResponse(w, http.StatusNoContent, "Resource gone");
+	SendResponse(w, http.StatusNoContent, "Resource deleted")
 }
 
 func PutCredentials(c web.C, w http.ResponseWriter, r *http.Request) {
 	log.Print("PutCredentials")
-	//id := c.URLParams["id"]
-	//w.Write(id)
+	id := c.URLParams["id"]
+
+	body := ParseCredBody(r)
+
+	existing := Resources[body.ResourceId]
+	if existing == "" {
+		SendResponse(w, http.StatusNotFound, "Resource could not be found")
+		return
+	}
+
+	bodystring, err := json.Marshal(body)
+	if err != nil {
+    	http.Error(w, err.Error(), http.StatusInternalServerError)
+    	return
+  	}
+
+  	fmt.Println("Creating Credentials")
+
+  	Credentials[id] = string(bodystring)
+
+  	SendResponse(w, http.StatusCreated, "Credentials created")
 }
 
 func DeleteCredentials(c web.C, w http.ResponseWriter, r *http.Request) {
 	log.Print("DeleteCredentials")
-	//id := c.URLParams["id"]
-	//w.Write(id)
+	id := c.URLParams["id"]
+
+	existing := Credentials[id]
+	if existing == ""{
+		SendResponse(w, http.StatusNotFound, "Resource could not be found")
+		return
+	}
+
+	delete(Credentials, id)
+	SendResponse(w, http.StatusNoContent, "Resource deleted")
 }
 
 func GetSso(w http.ResponseWriter, r *http.Request) {
@@ -172,10 +202,10 @@ func VerifySignature(w http.ResponseWriter, r *http.Request) {
 	body, _ := ioutil.ReadAll(r.Body)
 	buf := bytes.NewBuffer(body)
 
-	verifier, _ := signature.NewVerifier(signature.ManifoldKey)
+	verifier, _ := signature.NewVerifier(Master_key)
 	if err := verifier.Verify(r, buf); err != nil {
 		// return an error...
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		SendResponse(w, http.StatusUnauthorized, err.Error())
     	return
 	}
 }
@@ -190,9 +220,24 @@ func SendResponse(w http.ResponseWriter, code int, message string) {
     	return
   	}
   	//Log for testing
-  	fmt.Println(string(js))
+  	//fmt.Println(string(js))
 
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	w.Write(js)
+}
+
+func SendCredResponse(w http.ResponseWriter, code int, message string, credentials string) {
+	
+	msg := &ResponseBody{Message: message, Credentials: credentials}
+
+	js, err := json.Marshal(msg)
+	if err != nil {
+    	http.Error(w, err.Error(), http.StatusInternalServerError)
+    	return
+  	}
+
+  	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	w.Write(js)
 }
@@ -208,12 +253,25 @@ func ParseBody(r *http.Request) RequestBody {
     return body
 }
 
+func ParseCredBody(r *http.Request) CredRequestBody {
+	decoder := json.NewDecoder(r.Body)
+    var body CredRequestBody   
+    err := decoder.Decode(&body)
+    if err != nil {
+        panic(err)
+    }
+
+    return body
+}
+
 func IsInArray(a string, list []string) bool {
     for _, b := range list {
-    	fmt.Println ("a - ", a, "b - ", b)
+    	// Log for testing
+    	//fmt.Println ("a - ", a, "b - ", b)
         if b == a {
             return true
         }
     }
     return false
 }
+// End of helper functions
